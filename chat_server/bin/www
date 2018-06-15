@@ -1,0 +1,150 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('chat-server:server');
+var http = require('http');
+
+//socket_io 모듈을 읽어옴
+var socket_io =require('socket.io');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);  
+
+//웹 서버에 웹소켓 기능을 추가함
+var io = socket_io.listen(server);
+
+
+//로그인한 사용자의 아이디를 저장
+var login_ids = {};
+
+
+//웹 페이지들과 웹 소켓 연결이 되었을 때 실행
+io.sockets.on('connection', function(socket){
+  console.log('connect into');
+
+//특성 웹페이지에서 'hello_message_to_server'태그로 메세지를 받았을 때
+  socket.on('hello_message_to_server', function(message){
+    console.log(message.data);
+
+    var message = {smg_type : 'hello', data : '만나서 반갑습니다.'};
+    //웹페이지에 응답을 전달함
+    socket.emit('hello_message_to_client', message);
+  });
+
+  //웹페이지로부터 받은 태그가 message인 메세지를 받았을 떄
+  socket.on('message', function(message){
+    console.log(message);
+    switch(message.msg_type){
+      //메시지 타입이 login 인 경우
+      case 'login':
+        //login_ids 객체에 {message.id : socket.id}형태로 데이터를 저장한다.
+        login_ids[message.id] = socket.id;
+        //소켓 객체에도 아이디를 저장한다
+        socket.login_id = message.id;
+
+        var response_message = {msg_type : 'alert', data : '로그인 되었습니다.'};
+        socket.emit('alert', response_message);
+        console.log(response_message);
+        break;
+      //메세지의 타입이 chat인 경우
+      case 'chat':
+        if(login_ids[message.recepient]){
+          io.sockets.connected[login_ids[message.recepient]].emit('message',message);
+          var response_message = {msg_type : 'alert', data : '메세지전송완료'};
+          socket.emit('alert', response_message);
+          console.log(response_message);
+        }else{
+          var response_message = {msg_type : 'alert', data : '메세지전송대상없음'};
+          socket.emit('alert', response_message);
+          console.log(response_message);
+          
+        }
+       //웹페이지에게 받은 데이터를 역으로 전달함
+        socket.emit('message', message);
+        break;
+    }
+
+  });
+
+});
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
